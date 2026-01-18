@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # FastAPI application service [cite: 18, 43]
+  backend:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - db_data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/secure_mail.db
+
+  # NGINX reverse proxy service 
+  proxy:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
