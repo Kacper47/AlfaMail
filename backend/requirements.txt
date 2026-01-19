@@ -5,3 +5,5 @@ pydantic[email]
 cryptography
 pyotp
 argon2-cffi
+python-jose[cryptography]
+python-multipart
