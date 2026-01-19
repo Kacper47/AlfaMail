@@ -24,8 +24,8 @@ def get_db():
 def read_root():
     return {"status": "Application running", "docs_url": "/docs"}
 
-# --- USER REGISTRATION ---
 
+# --- USER REGISTRATION ---
 @app.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     # 1. Check if the username is already taken
@@ -140,8 +140,8 @@ def enable_2fa(username: str, data: schemas.TFAVerifyRequest, db: Session = Depe
         return {"message": f"2FA enabled successfully for {username}"}
     else:
         raise HTTPException(status_code=400, detail="Invalid 2FA code")
-# --- USER LOGIN (PHASE 2: 2FA VERIFICATION) ---
 
+# --- USER LOGIN (PHASE 2: 2FA VERIFICATION) ---
 @app.post("/login/verify-2fa", response_model=schemas.Token)
 def verify_login_2fa(data: schemas.TFAVerifyRequest, username: str, db: Session = Depends(get_db)):
     # Fetch the user by username
