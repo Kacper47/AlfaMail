@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, validator
 import re
+from typing import Optional
 
 class UserCreate(BaseModel):
     # Username constraints (e.g., min 3 chars)
@@ -35,3 +36,16 @@ class Token(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+class TFASecretResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+class TFAVerifyRequest(BaseModel):
+    code: str
+
+class LoginResponse(BaseModel):
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    requires_2fa: bool = False
+    username: str
