@@ -8,7 +8,7 @@ services:
       - ./backend:/app
       - db_data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///./data/secure_mail.db
+      - DATABASE_URL=sqlite:///./data/alfa_mail.db
 
   # NGINX reverse proxy service 
   proxy:

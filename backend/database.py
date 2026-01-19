@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # SQLite database URL for the containerized environment
-SQLALCHEMY_DATABASE_URL = "sqlite:///./data/secure_mail.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./data/alfa_mail.db"
 
 # Create the engine to interact with the database
 engine = create_engine(
