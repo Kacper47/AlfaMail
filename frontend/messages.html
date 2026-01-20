@@ -19,6 +19,8 @@
         <h3>Compose New Secure Message</h3>
         <input type="text" id="recipient" placeholder="Recipient Username" style="width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;"><br>
         <textarea id="msg-content" rows="4" placeholder="Type your secret message here..." style="width: 100%; padding: 8px; box-sizing: border-box;"></textarea><br>
+        <label style="display:block; margin: 10px 0 5px; font-weight:bold;">Attachment:</label>
+        <input type="file" id="attachment" style="margin-bottom: 15px;">
         <button onclick="sendMessage()" style="background: green; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Encrypt & Send</button>
     </div>
 

@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, validator
 import re
 import datetime
 from typing import Optional
+import bleach
 
 class UserCreate(BaseModel):
     # Username constraints (e.g., min 3 chars)
@@ -57,10 +58,15 @@ class KeyPairResponse(BaseModel):
     message: str
 
 class MessageCreate(BaseModel):
+    content: str
     sender_username: str
     recipient_username: str
-    content: str
     sender_private_key: str
+
+    @validator('content')
+    def sanitize_content(cls, v):
+        clean = re.sub(r'<[^>]*?>', '', v)
+        return clean
 
 class MessageResponse(BaseModel):
     id: int

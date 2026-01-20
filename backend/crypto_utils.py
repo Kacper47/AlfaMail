@@ -15,14 +15,12 @@ def generate_rsa_key_pair():
     )
     public_key = private_key.public_key()
     
-    # Serialize Private Key to PEM format (User must store this securely)
     pem_private = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption()
     )
     
-    # Serialize Public Key to PEM format (Stored in the database)
     pem_public = public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -33,20 +31,14 @@ def generate_rsa_key_pair():
 # --- 2. HYBRID ENCRYPTION (AES-GCM + RSA) ---
 
 def encrypt_message(message: str, recipient_public_key_pem: str):
-    """
-    Encrypts a message using AES-GCM for content and RSA for the AES key.
-    Returns: (nonce_b64, combined_body_json)
-    """
-    # Generate a random 256-bit AES key
+    """Encrypts content using AES-GCM and the AES key with RSA."""
     aes_key = AESGCM.generate_key(bit_length=256)
     aesgcm = AESGCM(aes_key)
-    nonce = os.urandom(12) # Standard GCM nonce size
+    nonce = os.urandom(12)
     
-    # Encrypt the message body with AES
     data = message.encode('utf-8')
     ciphertext = aesgcm.encrypt(nonce, data, associated_data=None)
     
-    # Encrypt the AES key with Recipient's RSA Public Key (OAEP Padding)
     public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode('utf-8'))
     encrypted_aes_key = public_key.encrypt(
         aes_key,
@@ -57,62 +49,19 @@ def encrypt_message(message: str, recipient_public_key_pem: str):
         )
     )
     
-    # Encode values to Base64 for database storage
-    ciphertext_b64 = base64.b64encode(ciphertext).decode('utf-8')
-    nonce_b64 = base64.b64encode(nonce).decode('utf-8')
-    enc_aes_key_b64 = base64.b64encode(encrypted_aes_key).decode('utf-8')
-    
-    # Combine ciphertext and encrypted AES key into a single JSON body
-    combined_body = json.dumps({
-        "content": ciphertext_b64,
-        "key": enc_aes_key_b64
+    return base64.b64encode(nonce).decode('utf-8'), json.dumps({
+        "content": base64.b64encode(ciphertext).decode('utf-8'),
+        "key": base64.b64encode(encrypted_aes_key).decode('utf-8')
     })
-    
-    return nonce_b64, combined_body
 
-# --- 3. RSA DIGITAL SIGNATURES (RSA-PSS) ---
-
-def sign_data(data: str, private_key_pem: str) -> str:
-    """Signs data using the Sender's RSA Private Key."""
-    private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
-    signature = private_key.sign(
-        data.encode('utf-8'),
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
-        ),
-        hashes.SHA256()
-    )
-    return base64.b64encode(signature).decode('utf-8')
-
-def verify_signature(data: str, signature_b64: str, public_key_pem: str) -> bool:
-    """Verifies the RSA-PSS signature using the Sender's Public Key."""
-    try:
-        public_key = serialization.load_pem_public_key(public_key_pem.encode('utf-8'))
-        signature = base64.b64decode(signature_b64)
-        public_key.verify(
-            signature,
-            data.encode('utf-8'),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        return True
-    except Exception:
-        return False
-    
 def decrypt_message(combined_body_json: str, nonce_b64: str, private_key_pem: str):
     """Decrypts a hybrid-encrypted message using RSA and AES-GCM."""
     try:
-        # 1. Parse JSON body and decode Base64
         body = json.loads(combined_body_json)
         ciphertext = base64.b64decode(body["content"])
         encrypted_aes_key = base64.b64decode(body["key"])
         nonce = base64.b64decode(nonce_b64)
 
-        # 2. Decrypt the AES key using Recipient's Private Key
         private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
         aes_key = private_key.decrypt(
             encrypted_aes_key,
@@ -123,11 +72,34 @@ def decrypt_message(combined_body_json: str, nonce_b64: str, private_key_pem: st
             )
         )
 
-        # 3. Decrypt the content using the recovered AES key
         aesgcm = AESGCM(aes_key)
-        decrypted_data = aesgcm.decrypt(nonce, ciphertext, associated_data=None)
-        
-        return decrypted_data.decode('utf-8')
+        return aesgcm.decrypt(nonce, ciphertext, associated_data=None).decode('utf-8')
     except Exception as e:
         print(f"Decryption failed: {e}")
         return None
+
+# --- 3. RSA DIGITAL SIGNATURES ---
+
+def sign_data(data: str, private_key_pem: str) -> str:
+    """Signs data using the Sender's RSA Private Key."""
+    private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
+    signature = private_key.sign(
+        data.encode('utf-8'),
+        padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+        hashes.SHA256()
+    )
+    return base64.b64encode(signature).decode('utf-8')
+
+def verify_signature(data: str, signature_b64: str, public_key_pem: str) -> bool:
+    """Verifies RSA-PSS signature."""
+    try:
+        public_key = serialization.load_pem_public_key(public_key_pem.encode('utf-8'))
+        public_key.verify(
+            base64.b64decode(signature_b64),
+            data.encode('utf-8'),
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+            hashes.SHA256()
+        )
+        return True
+    except:
+        return False

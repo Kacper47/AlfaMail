@@ -1,5 +1,4 @@
 services:
-  # FastAPI application service [cite: 18, 43]
   backend:
     build: ./backend
     volumes:
@@ -8,16 +7,18 @@ services:
     environment:
       - DATABASE_URL=sqlite:///./data/alfa_mail.db
 
-  # NGINX reverse proxy service 
   proxy:
-    build: ./nginx
     image: nginx:latest
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      # Use your actual nginx.conf from the nginx/ folder
+      # Mapujemy plik z folderu nginx do konfiguracji
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      # Map the frontend folder to the standard Nginx html directory
+      # Mapujemy certyfikaty (muszą być w głównym folderze AlfaMail)
+      - ./nginx.crt:/etc/nginx/conf.d/nginx.crt:ro
+      - ./nginx.key:/etc/nginx/conf.d/nginx.key:ro
+      # Mapujemy frontend (tam gdzie masz register.html, index.html, app.js)
       - ./frontend:/usr/share/nginx/html:ro
     depends_on:
       - backend

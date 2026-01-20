@@ -7,3 +7,4 @@ pyotp
 argon2-cffi
 python-jose[cryptography]
 python-multipart
+bleach==6.1.0

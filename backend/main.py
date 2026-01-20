@@ -1,18 +1,28 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
+from pydantic import BaseModel                
 from sqlalchemy.orm import Session
 import models
 import schemas
 import auth
-from database import engine, SessionLocal
-import datetime
-from datetime import timezone
+from database import engine, SessionLocal                         
+from datetime import datetime, timedelta, timezone
 import crypto_utils
+import asyncio                                
 import time 
+from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="AlfaMail")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"],
+)
 
 # Dependency to get a database session per request
 def get_db():
@@ -62,14 +72,32 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/login", response_model=schemas.LoginResponse)
-def login_for_access_token(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
-    # 1. Authenticate user password
-    user = auth.authenticate_user(db, user_data.username, user_data.password)
+async def login_for_access_token(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == user_data.username).first()
     
     if not user:
-        # Anti-brute force delay
-        time.sleep(2)
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        await asyncio.sleep(2)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    now = datetime.now(timezone.utc)
+    if user.lockout_until and now < user.lockout_until.replace(tzinfo=timezone.utc):
+        remaining = (user.lockout_until.replace(tzinfo=timezone.utc) - now).seconds // 60
+        raise HTTPException(status_code=403, detail=f"Account locked. Try again in {remaining + 1} min.")
+
+    if not auth.verify_password(user_data.password, user.hashed_password):
+        user.failed_attempts += 1
+        
+        if user.failed_attempts >= 5:
+            minutes_to_lock = 5 * (user.failed_attempts - 4)
+            user.lockout_until = now + timedelta(minutes=minutes_to_lock)
+        
+        db.commit()
+        await asyncio.sleep(2)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user.failed_attempts = 0
+    user.lockout_until = None
+    db.commit()
 
     # 2. Check if 2FA is active (Atomic Registration check)
     if not getattr(user, 'is_2fa_enabled', False):
@@ -137,7 +165,7 @@ def verify_login_2fa(data: schemas.TFAVerifyRequest, username: str, db: Session 
     log_entry = models.AuditLog(
         event_type="login_success_2fa",
         username=user.username,
-        timestamp=datetime.datetime.now(timezone.utc)
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(log_entry)
     db.commit()
@@ -193,7 +221,7 @@ def send_secure_message(msg: schemas.MessageCreate, db: Session = Depends(get_db
     
     # 3. Sign the message using Sender's Private Key
     # This ensures integrity and authenticity (Non-repudiation)
-    signature = crypto_utils.sign_data(msg.content, msg.sender_private_key)
+    signature = crypto_utils.sign_data(msg.content, clean_private_key)
     
     # 4. Create and save the message record
     new_message = models.Message(
@@ -210,14 +238,16 @@ def send_secure_message(msg: schemas.MessageCreate, db: Session = Depends(get_db
     
     return new_message
 
+class MessageFetchRequest(BaseModel):
+    username: str
+    private_key: str
 
-@app.get("/messages/my", response_model=list[schemas.DecryptedMessageResponse])
-def get_my_messages(username: str, private_key: str, db: Session = Depends(get_db)):
-    """
-    Retrieves and decrypts messages for a specific user.
-    Handles potential decryption or signature verification errors gracefully.
-    """
-    user = db.query(models.User).filter(models.User.username == username).first()
+@app.post("/messages/my", response_model=list[schemas.DecryptedMessageResponse])
+def get_my_messages(data: MessageFetchRequest, db: Session = Depends(get_db)):
+    # 1. FIX: Naprawa klucza prywatnego (znaki nowej linii)
+    clean_private_key = data.private_key.replace("\\n", "\n")
+    
+    user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -226,20 +256,17 @@ def get_my_messages(username: str, private_key: str, db: Session = Depends(get_d
 
     for msg in messages:
         try:
-            # 1. Attempt decryption
+            # 2. Używamy oczyszczonego klucza
             decrypted_content = crypto_utils.decrypt_message(
                 msg.ciphertext_body, 
                 msg.nonce, 
-                private_key
+                clean_private_key
             )
             
             if not decrypted_content:
                 continue
 
-            # 2. Verify Sender's Signature
             sender = db.query(models.User).filter(models.User.id == msg.sender_id).first()
-            
-            # Safety check: Does sender have a public key?
             is_signature_valid = False
             if sender and sender.public_key:
                 is_signature_valid = crypto_utils.verify_signature(
@@ -253,14 +280,11 @@ def get_my_messages(username: str, private_key: str, db: Session = Depends(get_d
                 "sender_username": sender.username if sender else "Unknown",
                 "content": decrypted_content,
                 "signature_valid": is_signature_valid,
-                "is_read": msg.is_read, # Pass the read status from the database
+                "is_read": msg.is_read,
                 "created_at": msg.created_at
             })
-        except Exception as e:
-            # Log the error and skip this specific message
-            print(f"Error processing message {msg.id}: {e}")
+        except Exception:
             continue
-
     return decrypted_list
 
 
