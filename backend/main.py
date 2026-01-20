@@ -6,6 +6,7 @@ import auth
 from database import engine, SessionLocal
 import datetime
 from datetime import timezone
+import crypto_utils
 
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
@@ -163,3 +164,122 @@ def verify_login_2fa(data: schemas.TFAVerifyRequest, username: str, db: Session 
     db.commit()
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+# --- CRYPTOGRAPHY & KEY MANAGEMENT ---
+@app.post("/keys/generate", response_model=schemas.KeyPairResponse)
+def generate_keys(username: str, db: Session = Depends(get_db)):
+    """
+    Generates a new RSA key pair for a user.
+    The public key is stored in the database, while the private key is returned once.
+    """
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Generate RSA keys using crypto_utils
+    priv_pem, pub_pem = crypto_utils.generate_rsa_key_pair()
+    
+    # Store the Public Key in the database for encryption by others
+    user.public_key = pub_pem
+    db.commit()
+    
+    # Return both keys. 
+    # NOTE: In a real app, the server would NEVER see the private key (client-side generation).
+    return {
+        "private_key": priv_pem,
+        "public_key": pub_pem,
+        "message": "IMPORTANT: Store your private key securely. It is not saved on the server!"
+    }
+
+# --- SECURE MESSAGING ENDPOINTS ---
+@app.post("/messages/send", response_model=schemas.MessageResponse)
+def send_secure_message(msg: schemas.MessageCreate, db: Session = Depends(get_db)):
+    """
+    Encrypts and signs a message before storing it in the database.
+    Uses Recipient's Public Key for encryption and Sender's Private Key for signing.
+    """
+    clean_private_key = msg.sender_private_key.replace("\\n", "\n")
+    # 1. Fetch Sender and Recipient from database
+    sender = db.query(models.User).filter(models.User.username == msg.sender_username).first()
+    recipient = db.query(models.User).filter(models.User.username == msg.recipient_username).first()
+    
+    if not sender or not recipient:
+        raise HTTPException(status_code=404, detail="Sender or Recipient not found")
+        
+    if not recipient.public_key:
+        raise HTTPException(status_code=400, detail="Recipient has not generated cryptographic keys")
+
+    # 2. Encrypt the message using Recipient's Public Key (Hybrid AES + RSA)
+    # This ensures only the recipient can read the content
+    nonce, encrypted_body = crypto_utils.encrypt_message(msg.content, recipient.public_key)
+    
+    # 3. Sign the message using Sender's Private Key
+    # This ensures integrity and authenticity (Non-repudiation)
+    signature = crypto_utils.sign_data(msg.content, msg.sender_private_key)
+    
+    # 4. Create and save the message record
+    new_message = models.Message(
+        sender_id=sender.id,
+        recipient_id=recipient.id,
+        ciphertext_body=encrypted_body,
+        nonce=nonce,
+        signature=signature
+    )
+    
+    db.add(new_message)
+    db.commit()
+    db.refresh(new_message)
+    
+    return new_message
+
+
+@app.get("/messages/my", response_model=list[schemas.DecryptedMessageResponse])
+def get_my_messages(username: str, private_key: str, db: Session = Depends(get_db)):
+    """
+    Retrieves and decrypts messages for a specific user.
+    Handles potential decryption or signature verification errors gracefully.
+    """
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    messages = db.query(models.Message).filter(models.Message.recipient_id == user.id).all()
+    decrypted_list = []
+
+    for msg in messages:
+        try:
+            # 1. Attempt decryption
+            decrypted_content = crypto_utils.decrypt_message(
+                msg.ciphertext_body, 
+                msg.nonce, 
+                private_key
+            )
+            
+            if not decrypted_content:
+                continue
+
+            # 2. Verify Sender's Signature
+            sender = db.query(models.User).filter(models.User.id == msg.sender_id).first()
+            
+            # Safety check: Does sender have a public key?
+            is_signature_valid = False
+            if sender and sender.public_key:
+                is_signature_valid = crypto_utils.verify_signature(
+                    decrypted_content, 
+                    msg.signature, 
+                    sender.public_key
+                )
+
+            decrypted_list.append({
+                "id": msg.id,
+                "sender_username": sender.username if sender else "Unknown",
+                "content": decrypted_content,
+                "signature_valid": is_signature_valid,
+                "created_at": msg.created_at
+            })
+        except Exception as e:
+            # Log the error and skip this specific message
+            print(f"Error processing message {msg.id}: {e}")
+            continue
+
+    return decrypted_list

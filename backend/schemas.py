@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, validator
 import re
+import datetime
 from typing import Optional
 
 class UserCreate(BaseModel):
@@ -49,3 +50,36 @@ class LoginResponse(BaseModel):
     token_type: Optional[str] = None
     requires_2fa: bool = False
     username: str
+
+class KeyPairResponse(BaseModel):
+    private_key: str
+    public_key: str
+    message: str
+
+class MessageCreate(BaseModel):
+    sender_username: str
+    recipient_username: str
+    content: str
+    sender_private_key: str # Used for signing the message
+
+class MessageResponse(BaseModel):
+    id: int
+    sender_id: int
+    recipient_id: int
+    ciphertext_body: str
+    nonce: str
+    signature: str
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class DecryptedMessageResponse(BaseModel):
+    id: int
+    sender_username: str
+    content: str  # Decrypted plaintext
+    signature_valid: bool
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
