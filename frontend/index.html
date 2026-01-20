@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AlfaMail</title>
+</head>
+<body style="font-family: sans-serif; padding: 2rem;">
+
+    <h1>AlfaMail Login</h1>
+    
+    <div id="login-form">
+        <input type="text" id="username" placeholder="Username"><br><br>
+        <input type="password" id="password" placeholder="Password"><br><br>
+        <button onclick="login()">Next</button>
+        <p>No account? <a href="register.html">Register here</a></p>
+    </div>
+
+    <div id="2fa-form" style="display:none; border: 2px solid orange; padding: 20px;">
+        <h3>2FA Required</h3>
+        <p>Open your Authenticator App and enter code:</p>
+        <input type="text" id="2fa-code" placeholder="6-digit code"><br><br>
+        <button onclick="verifyLogin2FA()">Verify & Login</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

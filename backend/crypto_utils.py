@@ -102,3 +102,32 @@ def verify_signature(data: str, signature_b64: str, public_key_pem: str) -> bool
         return True
     except Exception:
         return False
+    
+def decrypt_message(combined_body_json: str, nonce_b64: str, private_key_pem: str):
+    """Decrypts a hybrid-encrypted message using RSA and AES-GCM."""
+    try:
+        # 1. Parse JSON body and decode Base64
+        body = json.loads(combined_body_json)
+        ciphertext = base64.b64decode(body["content"])
+        encrypted_aes_key = base64.b64decode(body["key"])
+        nonce = base64.b64decode(nonce_b64)
+
+        # 2. Decrypt the AES key using Recipient's Private Key
+        private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
+        aes_key = private_key.decrypt(
+            encrypted_aes_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+
+        # 3. Decrypt the content using the recovered AES key
+        aesgcm = AESGCM(aes_key)
+        decrypted_data = aesgcm.decrypt(nonce, ciphertext, associated_data=None)
+        
+        return decrypted_data.decode('utf-8')
+    except Exception as e:
+        print(f"Decryption failed: {e}")
+        return None

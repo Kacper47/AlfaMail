@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AlfaMail - Register</title>
+</head>
+<body style="font-family: sans-serif; padding: 2rem;">
+
+    <h1>Create Account</h1>
+
+    <div id="registration-step">
+        <input type="text" id="reg-username" placeholder="Choose Username"><br><br>
+        <input type="password" id="reg-password" placeholder="Strong Password"><br><br>
+        <button onclick="register()">Create & Setup 2FA</button>
+        <p>Already have an account? <a href="index.html">Login</a></p>
+    </div>
+
+    <div id="2fa-setup-step" style="display:none; border: 2px solid blue; padding: 20px;">
+        <h3>Setup Authenticator</h3>
+        <p>1. Open Google/Microsoft Authenticator.</p>
+        <p>2. Add account manually and enter this secret key:</p>
+        
+        <h2 id="secret-display" style="background: #eee; padding: 10px; font-family: monospace;">LOADING...</h2>
+        
+        <p>3. Enter the code shown in the app below:</p>
+        <input type="text" id="setup-code" placeholder="Code from app"><br><br>
+        <button onclick="enable2FA()">Activate Account</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

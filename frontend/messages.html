@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AlfaMail - Secure Inbox</title>
+</head>
+<body style="font-family: sans-serif; padding: 2rem;">
+
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>Secure Inbox</h1>
+        <div style="text-align: right;">
+            <span id="welcome-message" style="font-weight: bold; margin-right: 15px; color: #333;"></span>
+            <button onclick="logout()" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;">Logout</button>
+        </div>
+    </div>
+    <hr>
+
+    <div style="background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+        <h3>Compose New Secure Message</h3>
+        <input type="text" id="recipient" placeholder="Recipient Username" style="width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;"><br>
+        <textarea id="msg-content" rows="4" placeholder="Type your secret message here..." style="width: 100%; padding: 8px; box-sizing: border-box;"></textarea><br>
+        <button onclick="sendMessage()" style="background: green; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Encrypt & Send</button>
+    </div>
+
+    <div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>My Messages</h3>
+            <button onclick="loadMessages()">Refresh Inbox</button>
+        </div>
+        <div id="inbox" style="margin-top: 10px;">
+            
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        checkAuth(); 
+        const { username } = getSession();
+        
+        if (username) {
+            document.getElementById('welcome-message').innerText = `${username}`;
+        } 
+
+        loadMessages();
+    </script>
+</body>
+</html>

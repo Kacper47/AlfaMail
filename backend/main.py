@@ -7,6 +7,7 @@ from database import engine, SessionLocal
 import datetime
 from datetime import timezone
 import crypto_utils
+import time 
 
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
@@ -26,86 +27,64 @@ def read_root():
     return {"status": "Application running", "docs_url": "/docs"}
 
 
-# --- USER REGISTRATION ---
-@app.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/register")
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # 1. Check if the username is already taken
+    # 1. Check if username exists
     db_user = db.query(models.User).filter(models.User.username == user.username).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # 2. Hash the password using the Argon2id algorithm
-    hashed_pw = auth.get_password_hash(user.password)
-    
-    # 3. Create a new user record in the database
+
+    # 2. Hash password
+    hashed_password = auth.get_password_hash(user.password)
+
+    # 3. Generate TOTP Secret IMMEDIATELY
+    totp_secret = auth.generate_totp_secret()
+
+    # 4. Create User (is_2fa_enabled = False by default in models.py)
     new_user = models.User(
         username=user.username,
-        hashed_password=hashed_pw
+        hashed_password=hashed_password,
+        totp_secret=totp_secret,     # Save secret now
+        is_2fa_enabled=False         # Account is "Pending" until verified
     )
     
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
-    return new_user
 
-# --- USER LOGIN (PHASE 1) ---
+    # 5. Return the secret so frontend can show it immediately
+    return {
+        "message": "User created. 2FA setup required.",
+        "username": new_user.username,
+        "secret": totp_secret,
+        "otpauth_uri": auth.get_totp_uri(new_user.username, totp_secret)
+    }
+
 
 @app.post("/login", response_model=schemas.LoginResponse)
-def login_for_access_token(
-    form_data: schemas.LoginRequest, 
-    request: Request, 
-    db: Session = Depends(get_db)
-):
-    # Find user by username
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+def login_for_access_token(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
+    # 1. Authenticate user password
+    user = auth.authenticate_user(db, user_data.username, user_data.password)
     
-    # Audit Log preparation for the login attempt
-    client_ip = request.client.host
-    log_entry = models.AuditLog(
-        event_type="login_attempt",
-        username=form_data.username,
-        ip_address=client_ip,
-        timestamp=datetime.datetime.now(timezone.utc)
-    )
-    
-    # Verify user existence and password validity
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
-        # Log failed attempt
-        log_entry.event_type = "login_failed"
-        db.add(log_entry)
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Check if 2FA is enabled for this user
-    if user.is_2fa_enabled:
-        # Do not issue JWT yet; inform that TOTP code is required
-        return schemas.LoginResponse(
-            username=user.username,
-            requires_2fa=True
-        )
-    
-    # Log successful login attempt (when 2FA is disabled)
-    log_entry.event_type = "login_success"
-    db.add(log_entry)
-    db.commit()
+    if not user:
+        # Anti-brute force delay
+        time.sleep(2)
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
 
-    # Generate JWT access token
-    access_token_expires = datetime.timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    
-    return schemas.LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        username=user.username,
-        requires_2fa=False
-    )
+    # 2. Check if 2FA is active (Atomic Registration check)
+    if not getattr(user, 'is_2fa_enabled', False):
+        raise HTTPException(
+            status_code=403, 
+            detail="Account not activated. Please verify your 2FA code first."
+        )
+
+    # 3. Phase 1 success: Server requests TOTP code
+    return {
+        "access_token": None,
+        "token_type": None,
+        "requires_2fa": True,
+        "username": user.username
+    }
 
 
 # --- TWO-FACTOR AUTHENTICATION (2FA) MANAGEMENT ---
@@ -168,27 +147,26 @@ def verify_login_2fa(data: schemas.TFAVerifyRequest, username: str, db: Session 
 # --- CRYPTOGRAPHY & KEY MANAGEMENT ---
 @app.post("/keys/generate", response_model=schemas.KeyPairResponse)
 def generate_keys(username: str, db: Session = Depends(get_db)):
-    """
-    Generates a new RSA key pair for a user.
-    The public key is stored in the database, while the private key is returned once.
-    """
     user = db.query(models.User).filter(models.User.username == username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
         
-    # Generate RSA keys using crypto_utils
+    if user.public_key and user.encrypted_private_key:
+        return {
+            "private_key": user.encrypted_private_key,
+            "public_key": user.public_key,
+            "message": "Keys restored from server vault."
+        }
+
     priv_pem, pub_pem = crypto_utils.generate_rsa_key_pair()
-    
-    # Store the Public Key in the database for encryption by others
     user.public_key = pub_pem
+    user.encrypted_private_key = priv_pem 
     db.commit()
     
-    # Return both keys. 
-    # NOTE: In a real app, the server would NEVER see the private key (client-side generation).
     return {
         "private_key": priv_pem,
         "public_key": pub_pem,
-        "message": "IMPORTANT: Store your private key securely. It is not saved on the server!"
+        "message": "New keys generated and backed up to server."
     }
 
 # --- SECURE MESSAGING ENDPOINTS ---
@@ -275,6 +253,7 @@ def get_my_messages(username: str, private_key: str, db: Session = Depends(get_d
                 "sender_username": sender.username if sender else "Unknown",
                 "content": decrypted_content,
                 "signature_valid": is_signature_valid,
+                "is_read": msg.is_read, # Pass the read status from the database
                 "created_at": msg.created_at
             })
         except Exception as e:
@@ -283,3 +262,26 @@ def get_my_messages(username: str, private_key: str, db: Session = Depends(get_d
             continue
 
     return decrypted_list
+
+
+@app.delete("/messages/{message_id}")
+def delete_message(message_id: int, db: Session = Depends(get_db)):
+    """Deletes a specific message from the database."""
+    msg = db.query(models.Message).filter(models.Message.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    db.delete(msg)
+    db.commit()
+    return {"message": "Message deleted successfully"}
+
+@app.patch("/messages/{message_id}/read")
+def mark_message_as_read(message_id: int, db: Session = Depends(get_db)):
+    """Marks a message as read in the database."""
+    msg = db.query(models.Message).filter(models.Message.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    msg.is_read = True
+    db.commit()
+    return {"message": "Message marked as read"}

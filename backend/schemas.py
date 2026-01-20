@@ -60,7 +60,7 @@ class MessageCreate(BaseModel):
     sender_username: str
     recipient_username: str
     content: str
-    sender_private_key: str # Used for signing the message
+    sender_private_key: str
 
 class MessageResponse(BaseModel):
     id: int
@@ -77,9 +77,21 @@ class MessageResponse(BaseModel):
 class DecryptedMessageResponse(BaseModel):
     id: int
     sender_username: str
-    content: str  # Decrypted plaintext
+    content: str
     signature_valid: bool
+    is_read: bool 
     created_at: datetime.datetime
 
     class Config:
         from_attributes = True
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    requires_2fa: bool
+    username: str
