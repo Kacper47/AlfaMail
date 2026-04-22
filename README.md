@@ -1,72 +1,73 @@
 # AlfaMail
 
-Bezpieczna platforma do wymiany wiadomości z szyfrowaniem end-to-end, obowiązkowym uwierzytelnianiem dwuskładnikowym (TOTP) i podpisami cyfrowymi RSA.
+A secure messaging platform with end-to-end encryption, mandatory two-factor authentication (TOTP), and RSA digital signatures.
 
 ---
 
-## Spis treści
+## Table of Contents
 
-- [Architektura](#architektura)
-- [Funkcje bezpieczeństwa](#funkcje-bezpieczeństwa)
-- [Wymagania](#wymagania)
-- [Uruchomienie](#uruchomienie)
-- [Konfiguracja](#konfiguracja)
-- [Przepływ użytkownika](#przepływ-użytkownika)
-- [Technologie](#technologie)
-- [Struktura projektu](#struktura-projektu)
+- [Architecture](#architecture)
+- [Security Features](#security-features)
+- [Requirements](#requirements)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [User Flows](#user-flows)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [API Reference](#api-reference)
 
 ---
 
-## Architektura
+## Architecture
 
 ```
-Przeglądarka
-     │ HTTPS (443)
-     ▼
-  Nginx (proxy)
-     │
-     ├──► Frontend (pliki statyczne: HTML/JS)
-     │
-     └──► Backend (FastAPI, port 8000)
-               │
-               └──► SQLite (dane użytkowników i wiadomości)
+Browser
+   │ HTTPS (443)
+   ▼
+Nginx (reverse proxy)
+   │
+   ├──► Frontend (static files: HTML/JS)
+   │
+   └──► Backend (FastAPI, port 8000)
+             │
+             └──► SQLite (users & messages)
 ```
 
-Cały ruch HTTP jest automatycznie przekierowywany na HTTPS. Nginx pełni rolę reverse proxy – serwuje frontend jako pliki statyczne i przekazuje żądania do API backendu.
+All HTTP traffic is automatically redirected to HTTPS. Nginx serves the frontend as static files and proxies API requests to the FastAPI backend.
 
 ---
 
-## Funkcje bezpieczeństwa
+## Security Features
 
-| Mechanizm | Implementacja |
+| Mechanism | Implementation |
 |---|---|
-| Hashowanie haseł | **Argon2id** |
-| Uwierzytelnianie dwuskładnikowe | **TOTP** (RFC 6238), obowiązkowe dla wszystkich kont |
-| Szyfrowanie wiadomości | Hybrydowe: **AES-256-GCM** (treść) + **RSA-2048-OAEP** (klucz) |
-| Podpisy cyfrowe | **RSA-PSS** z SHA-256 |
-| Tokeny sesji | **JWT** (HS256), dwufazowe (`pre_2fa_token` → `access_token`) |
-| Ochrona przed brute-force | Progresywna blokada konta po 5 nieudanych próbach logowania |
-| Ochrona 2FA | Blokada na 5 minut po 5 błędnych kodach TOTP |
-| Transport | **TLS/HTTPS** |
-| Nagłówki HTTP | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| Logi audytowe | Rejestrowanie zdarzeń logowania w bazie danych |
+| Password hashing | **Argon2id** |
+| Two-factor authentication | **TOTP** (RFC 6238), mandatory for all accounts |
+| Message encryption | Hybrid: **AES-256-GCM** (content) + **RSA-2048-OAEP** (key) |
+| Digital signatures | **RSA-PSS** with SHA-256 |
+| Session tokens | **JWT** (HS256), two-phase (`pre_2fa_token` → `access_token`) |
+| Brute-force protection | Progressive account lockout after 5 failed login attempts |
+| 2FA protection | 5-minute lockout after 5 incorrect TOTP codes |
+| Transport security | **TLS/HTTPS** |
+| HTTP headers | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
+| Audit logging | Login events recorded to the database |
 
-### Jak działa szyfrowanie wiadomości?
+### How message encryption works
 
-1. Nadawca generuje jednorazowy klucz AES-256 i szyfruje nim treść wiadomości (AES-GCM).
-2. Klucz AES jest szyfrowany kluczem publicznym RSA odbiorcy (OAEP/SHA-256).
-3. Nadawca podpisuje treść swoim kluczem prywatnym (RSA-PSS).
-4. Serwer przechowuje wyłącznie zaszyfrowane dane – nigdy nie ma dostępu do treści wiadomości.
-5. Odbiorca odszyfrowuje klucz AES swoim kluczem prywatnym, a następnie odszyfrowuje treść i weryfikuje podpis.
+1. The sender generates a one-time AES-256 key and encrypts the message content with it (AES-GCM).
+2. The AES key is encrypted with the recipient's RSA public key (OAEP/SHA-256).
+3. The sender signs the plaintext content with their RSA private key (RSA-PSS).
+4. The server stores only ciphertext — it never has access to message content.
+5. The recipient decrypts the AES key with their private key, decrypts the content, and verifies the sender's signature.
 
 ---
 
-## Wymagania
+## Requirements
 
-- [Docker](https://www.docker.com/) i [Docker Compose](https://docs.docker.com/compose/)
-- Certyfikat TLS i klucz prywatny (`nginx.crt`, `nginx.key`) w głównym katalogu projektu
+- [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
+- A TLS certificate and private key (`nginx.crt`, `nginx.key`) placed in the project root
 
-### Generowanie certyfikatu self-signed (tylko do celów deweloperskich)
+### Generating a self-signed certificate (development only)
 
 ```bash
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
@@ -76,11 +77,11 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 
 ---
 
-## Uruchomienie
+## Getting Started
 
-1. **Sklonuj repozytorium** i przejdź do katalogu projektu.
+1. **Clone the repository** and navigate to the project directory.
 
-2. **Ustaw zmienną środowiskową** `SECRET_KEY` (używana do podpisywania tokenów JWT):
+2. **Set the `SECRET_KEY` environment variable** (used to sign JWT tokens):
 
    ```bash
    # Linux/macOS
@@ -90,140 +91,141 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
    $env:SECRET_KEY = [System.Convert]::ToBase64String((1..64 | ForEach-Object { [byte](Get-Random -Max 256) }))
    ```
 
-   Możesz też umieścić ją w pliku `.env` w katalogu projektu:
+   Alternatively, create a `.env` file in the project root:
 
    ```env
-   SECRET_KEY=twoj_bardzo_tajny_klucz
+   SECRET_KEY=your_very_secret_key_here
    ```
 
-3. **Uruchom aplikację:**
+3. **Start the application:**
 
    ```bash
    docker compose up --build
    ```
 
-4. **Otwórz przeglądarkę** i przejdź pod adres `https://localhost`.
+4. **Open your browser** and go to `https://localhost`.
 
-   > Przy certyfikacie self-signed przeglądarka wyświetli ostrzeżenie – możesz je zaakceptować w celach deweloperskich.
+   > Your browser will show a warning for the self-signed certificate — you can safely accept it for local development.
 
 ---
 
-## Konfiguracja
+## Configuration
 
-| Zmienna środowiskowa | Opis | Domyślnie |
+| Environment Variable | Description | Default |
 |---|---|---|
-| `SECRET_KEY` | Klucz do podpisywania tokenów JWT | Losowy (niezalecane w produkcji) |
-| `DATABASE_URL` | Adres bazy danych SQLAlchemy | `sqlite:///./data/alfa_mail.db` |
+| `SECRET_KEY` | Key used to sign JWT tokens | Random (not recommended for production) |
+| `DATABASE_URL` | SQLAlchemy database URL | `sqlite:///./data/alfa_mail.db` |
 
 ---
 
-## Przepływ użytkownika
+## User Flows
 
-### Rejestracja i aktywacja 2FA
-
-```
-1. Rejestracja (POST /register)
-       ↓
-   Serwer zwraca sekret TOTP + URI do QR kodu
-       ↓
-2. Użytkownik skanuje QR kod w aplikacji (Google Authenticator, Aegis itp.)
-       ↓
-3. Aktywacja 2FA (POST /2fa/enable) – weryfikacja pierwszego kodu TOTP
-       ↓
-   Konto aktywowane
-```
-
-### Logowanie (dwufazowe)
+### Registration and 2FA activation
 
 ```
-1. POST /login (login + hasło)
+1. Register (POST /register)
        ↓
-   Serwer zwraca `pre_2fa_token` (ważny 5 min)
+   Server returns TOTP secret + QR code URI
        ↓
-2. POST /login/verify-2fa (kod TOTP + pre_2fa_token)
+2. User scans QR code in an authenticator app (Google Authenticator, Aegis, etc.)
        ↓
-   Serwer zwraca `access_token` (ważny 30 min)
+3. Enable 2FA (POST /2fa/enable) — verify the first TOTP code
+       ↓
+   Account activated
 ```
 
-### Wysyłanie zaszyfrowanej wiadomości
+### Login (two-phase)
 
 ```
-1. Generowanie kluczy RSA (POST /keys/generate) – klucz publiczny trafia na serwer;
-   klucz prywatny (zaszyfrowany hasłem użytkownika) jest przechowywany lokalnie lub w sejfie serwera.
+1. POST /login  (username + password)
        ↓
-2. Wysłanie wiadomości (POST /messages/send):
-   - Treść szyfrowana kluczem publicznym odbiorcy (AES-GCM + RSA-OAEP)
-   - Treść podpisywana kluczem prywatnym nadawcy (RSA-PSS)
+   Server returns `pre_2fa_token` (valid for 5 min)
        ↓
-3. Odczyt wiadomości (POST /messages/my):
-   - Odszyfrowanie własnym kluczem prywatnym
-   - Weryfikacja podpisu nadawcy
+2. POST /login/verify-2fa  (TOTP code + pre_2fa_token)
+       ↓
+   Server returns `access_token` (valid for 30 min)
+```
+
+### Sending an encrypted message
+
+```
+1. Generate RSA keys (POST /keys/generate)
+   — public key is stored on the server
+   — private key (encrypted with the user's password) is stored locally or in the server vault
+       ↓
+2. Send message (POST /messages/send):
+   — content encrypted with recipient's public key (AES-GCM + RSA-OAEP)
+   — content signed with sender's private key (RSA-PSS)
+       ↓
+3. Read messages (POST /messages/my):
+   — decrypt with own private key
+   — verify sender's signature
 ```
 
 ---
 
-## Technologie
+## Tech Stack
 
 ### Backend
 - **Python 3.11+**
-- **FastAPI** – framework REST API
-- **SQLAlchemy** – ORM, baza danych SQLite
-- **Argon2-cffi** – hashowanie haseł (Argon2id)
-- **python-jose** – generowanie i weryfikacja tokenów JWT
-- **pyotp** – implementacja TOTP (RFC 6238)
-- **cryptography** – RSA, AES-GCM, podpisy cyfrowe
+- **FastAPI** — REST API framework
+- **SQLAlchemy** — ORM with SQLite
+- **Argon2-cffi** — password hashing (Argon2id)
+- **python-jose** — JWT generation and verification
+- **pyotp** — TOTP implementation (RFC 6238)
+- **cryptography** — RSA, AES-GCM, digital signatures
 
 ### Frontend
-- Vanilla HTML / CSS / JavaScript (bez zewnętrznych frameworków)
+- Vanilla HTML / CSS / JavaScript (no external frameworks)
 
-### Infrastruktura
-- **Docker Compose** – orkiestracja kontenerów
-- **Nginx** – reverse proxy, TLS termination, serwowanie pliku statycznych
+### Infrastructure
+- **Docker Compose** — container orchestration
+- **Nginx** — reverse proxy, TLS termination, static file serving
 
 ---
 
-## Struktura projektu
+## Project Structure
 
 ```
 AlfaMail/
 ├── backend/
-│   ├── main.py          # Definicje endpointów FastAPI
-│   ├── auth.py          # Hasła (Argon2), JWT, TOTP
-│   ├── crypto_utils.py  # RSA, AES-GCM, podpisy
-│   ├── models.py        # Modele SQLAlchemy (User, Message, AuditLog)
-│   ├── schemas.py       # Schematy Pydantic (walidacja żądań/odpowiedzi)
-│   ├── database.py      # Konfiguracja sesji bazy danych
+│   ├── main.py          # FastAPI endpoint definitions
+│   ├── auth.py          # Passwords (Argon2), JWT, TOTP
+│   ├── crypto_utils.py  # RSA, AES-GCM, digital signatures
+│   ├── models.py        # SQLAlchemy models (User, Message, AuditLog)
+│   ├── schemas.py       # Pydantic schemas (request/response validation)
+│   ├── database.py      # Database session configuration
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
-│   ├── index.html       # Strona logowania
-│   ├── register.html    # Strona rejestracji + setup 2FA
-│   ├── messages.html    # Skrzynka odbiorcza
-│   └── app.js           # Logika klienta (szyfrowanie, API)
+│   ├── index.html       # Login page
+│   ├── register.html    # Registration page + 2FA setup
+│   ├── messages.html    # Inbox
+│   └── app.js           # Client-side logic (encryption, API calls)
 ├── nginx/
-│   ├── nginx.conf       # Konfiguracja Nginx (HTTPS, proxy, nagłówki CSP)
+│   ├── nginx.conf       # Nginx config (HTTPS, proxy, CSP headers)
 │   └── Dockerfile
-├── nginx.crt            # Certyfikat TLS (nie commitować do repo!)
-├── nginx.key            # Klucz prywatny TLS (nie commitować do repo!)
+├── nginx.crt            # TLS certificate (do not commit to repo!)
+├── nginx.key            # TLS private key (do not commit to repo!)
 └── docker-compose.yml
 ```
 
-> **Uwaga:** Pliki `nginx.crt` i `nginx.key` nie powinny być przechowywane w repozytorium Git – dodaj je do `.gitignore`.
+> **Note:** `nginx.crt` and `nginx.key` should not be stored in the Git repository — add them to `.gitignore`.
 
 ---
 
-## API – skrócona dokumentacja
+## API Reference
 
-Interaktywna dokumentacja Swagger UI dostępna pod adresem `https://localhost/docs` po uruchomieniu aplikacji.
+Interactive Swagger UI documentation is available at `https://localhost/docs` once the application is running.
 
-| Metoda | Endpoint | Opis |
+| Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/register` | Rejestracja nowego konta + inicjalizacja TOTP |
-| `POST` | `/2fa/enable` | Aktywacja 2FA (weryfikacja pierwszego kodu) |
-| `POST` | `/login` | Logowanie – faza 1 (zwraca `pre_2fa_token`) |
-| `POST` | `/login/verify-2fa` | Logowanie – faza 2 (weryfikacja TOTP, zwraca `access_token`) |
-| `POST` | `/keys/generate` | Generowanie lub odtworzenie pary kluczy RSA |
-| `POST` | `/messages/send` | Wysłanie zaszyfrowanej wiadomości |
-| `POST` | `/messages/my` | Pobranie i odszyfrowanie własnych wiadomości |
-| `PATCH` | `/messages/{id}/read` | Oznaczenie wiadomości jako przeczytanej |
-| `DELETE` | `/messages/{id}` | Usunięcie wiadomości |
+| `POST` | `/register` | Register a new account + initialize TOTP |
+| `POST` | `/2fa/enable` | Activate 2FA (verify the first TOTP code) |
+| `POST` | `/login` | Login — phase 1 (returns `pre_2fa_token`) |
+| `POST` | `/login/verify-2fa` | Login — phase 2 (verify TOTP, returns `access_token`) |
+| `POST` | `/keys/generate` | Generate or restore RSA key pair |
+| `POST` | `/messages/send` | Send an encrypted message |
+| `POST` | `/messages/my` | Fetch and decrypt received messages |
+| `PATCH` | `/messages/{id}/read` | Mark a message as read |
+| `DELETE` | `/messages/{id}` | Delete a message |
