@@ -50,6 +50,7 @@ class LoginResponse(BaseModel):
     access_token: Optional[str] = None
     token_type: Optional[str] = None
     requires_2fa: bool = False
+    pre_2fa_token: Optional[str] = None
     username: str
 
 class KeyPairResponse(BaseModel):
@@ -57,11 +58,15 @@ class KeyPairResponse(BaseModel):
     public_key: str
     message: str
 
+class KeyGenerateRequest(BaseModel):
+    password: str
+
 class MessageCreate(BaseModel):
     content: str
     sender_username: str
     recipient_username: str
     sender_private_key: str
+    password: str
 
     @validator('content')
     def sanitize_content(cls, v):
@@ -91,13 +96,18 @@ class DecryptedMessageResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class UserLogin(BaseModel):
     username: str
     password: str
 
-class LoginResponse(BaseModel):
-    access_token: Optional[str] = None
-    token_type: Optional[str] = None
-    requires_2fa: bool
+class TFAEnableRequest(BaseModel):
     username: str
+    password: str
+    code: str
+
+class Login2FAVerifyRequest(BaseModel):
+    code: str
+
+class MessageReadRequest(BaseModel):
+    private_key: str
+    password: str

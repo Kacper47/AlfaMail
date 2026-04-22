@@ -18,7 +18,7 @@
     <div id="2fa-form" style="display:none; border: 2px solid orange; padding: 20px;">
         <h3>2FA Required</h3>
         <p>Open your Authenticator App and enter code:</p>
-        <input type="text" id="2fa-code" placeholder="6-digit code"><br><br>
+        <input type="text" id="2fa-code" maxlength="6" pattern="\d{6}" inputmode="numeric"  placeholder="6-digit code"><br><br>
         <button onclick="verifyLogin2FA()">Verify & Login</button>
     </div>
 

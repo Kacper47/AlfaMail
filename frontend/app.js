@@ -3,7 +3,7 @@ const API_URL = "https://localhost";
 function escapeHTML(str) {
     if (!str) return "";
     const p = document.createElement('p');
-    p.textContent = str; 
+    p.textContent = str;
     return p.innerHTML;
 }
 
@@ -14,29 +14,38 @@ const fileToBase64 = file => new Promise((resolve, reject) => {
     reader.onerror = error => reject(error);
 });
 
-// --- UTILS: LOCAL STORAGE MANAGEMENT ---
 function saveSession(username, token) {
-    localStorage.setItem('username', username);
-    localStorage.setItem('access_token', token);
+    sessionStorage.setItem('username', username);
+    sessionStorage.setItem('access_token', token);
 }
 
 function getSession() {
     return {
-        username: localStorage.getItem('username'),
-        token: localStorage.getItem('access_token')
+        username: sessionStorage.getItem('username'),
+        token: sessionStorage.getItem('access_token')
+    };
+}
+
+function getAuthHeaders() {
+    const { token } = getSession();
+    if (!token) return { 'Content-Type': 'application/json' };
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
     };
 }
 
 function savePrivateKey(key) {
-    localStorage.setItem('private_key', key);
+    sessionStorage.setItem('private_key', key);
 }
 
 function getPrivateKey() {
-    return localStorage.getItem('private_key');
+    return sessionStorage.getItem('private_key');
 }
 
 function logout() {
-    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.removeItem('temp_reg_username');
     window.location.href = 'index.html';
 }
 
@@ -47,7 +56,6 @@ function checkAuth() {
     }
 }
 
-// --- AUTHENTICATION (LOGIN) ---
 async function login() {
     const user = document.getElementById('username').value;
     const pass = document.getElementById('password').value;
@@ -58,11 +66,14 @@ async function login() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: user, password: pass })
         });
-        
+
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail);
 
-        if (data.requires_2fa) {
+        sessionStorage.setItem('encryption_password', pass);
+
+        if (data.requires_2fa && data.pre_2fa_token) {
+            sessionStorage.setItem('pre_2fa_token', data.pre_2fa_token);
             document.getElementById('login-form').style.display = 'none';
             document.getElementById('2fa-form').style.display = 'block';
         } else if (data.access_token) {
@@ -77,17 +88,27 @@ async function login() {
 async function verifyLogin2FA() {
     const user = document.getElementById('username').value;
     const code = document.getElementById('2fa-code').value;
+    const pre2faToken = sessionStorage.getItem('pre_2fa_token');
+
+    if (!pre2faToken) {
+        alert("2FA session expired. Please login again.");
+        return;
+    }
 
     try {
-        const response = await fetch(`${API_URL}/login/verify-2fa?username=${user}`, {
+        const response = await fetch(`${API_URL}/login/verify-2fa`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${pre2faToken}`
+            },
             body: JSON.stringify({ code: code })
         });
 
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail);
 
+        sessionStorage.removeItem('pre_2fa_token');
         saveSession(user, data.access_token);
         window.location.href = 'messages.html';
     } catch (error) {
@@ -95,7 +116,6 @@ async function verifyLogin2FA() {
     }
 }
 
-// --- REGISTRATION FLOW ---
 async function register() {
     const user = document.getElementById('reg-username').value;
     const pass = document.getElementById('reg-password').value;
@@ -117,7 +137,17 @@ async function register() {
         document.getElementById('registration-step').style.display = 'none';
         document.getElementById('2fa-setup-step').style.display = 'block';
         document.getElementById('secret-display').innerText = data.secret;
+        document.getElementById('qrcode').innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), {
+            text: data.otpauth_uri,
+            width: 160,
+            height: 160,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
         localStorage.setItem('temp_reg_username', user);
+        sessionStorage.setItem('encryption_password', pass);
     } catch (error) {
         alert("Registration Error:\n" + error.message);
     }
@@ -126,15 +156,19 @@ async function register() {
 async function enable2FA() {
     const user = localStorage.getItem('temp_reg_username');
     const code = document.getElementById('setup-code').value;
+    const pass = sessionStorage.getItem('encryption_password');
 
     try {
-        const response = await fetch(`${API_URL}/2fa/enable?username=${user}`, {
+        const response = await fetch(`${API_URL}/2fa/enable`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: code })
+            body: JSON.stringify({ username: user, password: pass, code: code })
         });
 
-        if (!response.ok) throw new Error("Invalid code");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Invalid code");
+
+        localStorage.removeItem('temp_reg_username');
         alert("Account created & 2FA enabled! Please login.");
         window.location.href = 'index.html';
     } catch (error) {
@@ -142,18 +176,21 @@ async function enable2FA() {
     }
 }
 
-// --- MESSAGES LOGIC ---
-
 async function sendMessage() {
     const { username } = getSession();
     const privateKey = getPrivateKey();
     const recipient = document.getElementById('recipient').value;
     const textContent = document.getElementById('msg-content').value;
-    const fileInput = document.getElementById('attachment'); 
+    const fileInput = document.getElementById('attachment');
 
     if (!privateKey) return alert("Security Error: Identity keys missing.");
 
-    // 1. Pack text and file into a single JSON object
+    const password = sessionStorage.getItem('encryption_password');
+    if (!password) {
+        alert("Session expired. Please logout and login again to unlock keys.");
+        return;
+    }
+
     let payload = {
         text: textContent,
         file: null
@@ -162,7 +199,7 @@ async function sendMessage() {
     if (fileInput.files.length > 0) {
         const file = fileInput.files[0];
         if (file.size > 2 * 1024 * 1024) return alert("File too large! Max 2MB.");
-        
+
         const base64Data = await fileToBase64(file);
         payload.file = {
             name: file.name,
@@ -174,12 +211,13 @@ async function sendMessage() {
 
     const response = await fetch(`${API_URL}/messages/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             sender_username: username,
             recipient_username: recipient,
-            content: finalContent, 
-            sender_private_key: privateKey
+            content: finalContent,
+            sender_private_key: privateKey,
+            password: password
         })
     });
 
@@ -193,32 +231,41 @@ async function sendMessage() {
 }
 
 async function loadMessages() {
-    const { username } = getSession();
     const listDiv = document.getElementById('inbox');
-    
-    const keyResp = await fetch(`${API_URL}/keys/generate?username=${username}`, { method: 'POST' });
+
+    const password = sessionStorage.getItem('encryption_password');
+    if (!password) {
+        listDiv.innerHTML = '<p style="color:red">Encryption key missing. Please relogin.</p>';
+        return;
+    }
+
+    const keyResp = await fetch(`${API_URL}/keys/generate`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ password: password })
+    });
     const keyData = await keyResp.json();
-    
+
     if (!keyResp.ok) {
         listDiv.innerHTML = '<p style="color:red">Security Error: Could not restore identity keys.</p>';
         return;
     }
-    
+
     const privateKey = keyData.private_key;
     savePrivateKey(privateKey);
 
     const response = await fetch(`${API_URL}/messages/my`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
-            username: username,
-            private_key: privateKey
+            private_key: privateKey,
+            password: password
         })
     });
 
     const messages = await response.json();
     listDiv.innerHTML = "";
-    
+
     if (messages.length === 0) {
         listDiv.innerHTML = "<p>Your inbox is empty.</p>";
         return;
@@ -229,7 +276,7 @@ async function loadMessages() {
         div.style.border = "1px solid #ccc";
         div.style.padding = "10px";
         div.style.marginBottom = "5px";
-        if (msg.is_read) div.style.opacity = "0.5"; 
+        if (msg.is_read) div.style.opacity = "0.5";
 
         let messageText = "";
         let attachmentHtml = "";
@@ -237,24 +284,25 @@ async function loadMessages() {
         try {
             const payload = JSON.parse(msg.content);
             messageText = payload.text || "(No text)";
-            
-            if (payload.file) {
+
+            if (payload.file && typeof payload.file.data === 'string' && payload.file.data.startsWith('data:')) {
+                const safeFileName = escapeHTML(payload.file.name || 'attachment');
+                const safeFileData = payload.file.data;
                 attachmentHtml = `
                     <div style="margin-top: 10px; padding: 8px; background: #eef; border-radius: 4px;">
-                        📎 <b>Attachment:</b> 
-                        <a href="${payload.file.data}" download="${payload.file.name}" style="color: blue; font-weight: bold;">
-                            Download ${payload.file.name}
+                        <b>Attachment:</b>
+                        <a href="${safeFileData}" download="${safeFileName}" style="color: blue; font-weight: bold;">
+                            Download ${safeFileName}
                         </a>
                     </div>
                 `;
             }
         } catch (e) {
-            
             messageText = msg.content;
         }
 
         const safeSender = escapeHTML(msg.sender_username);
-        const safeText = escapeHTML(messageText); 
+        const safeText = escapeHTML(messageText);
 
         div.innerHTML = `
             <b>From:</b> ${safeSender} <br>
@@ -274,14 +322,20 @@ async function loadMessages() {
 
 async function deleteMessage(id) {
     if (!confirm("Are you sure you want to delete this message?")) return;
-    const response = await fetch(`${API_URL}/messages/${id}`, { method: 'DELETE' });
+    const response = await fetch(`${API_URL}/messages/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
     if (response.ok) {
         loadMessages();
     }
 }
 
 async function markRead(id) {
-    const response = await fetch(`${API_URL}/messages/${id}/read`, { method: 'PATCH' });
+    const response = await fetch(`${API_URL}/messages/${id}/read`, {
+        method: 'PATCH',
+        headers: getAuthHeaders()
+    });
     if (response.ok) {
         loadMessages();
     }

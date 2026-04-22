@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AlfaMail - Register</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body style="font-family: sans-serif; padding: 2rem;">
 
@@ -19,11 +20,14 @@
         <h3>Setup Authenticator</h3>
         <p>1. Open Google/Microsoft Authenticator.</p>
         <p>2. Add account manually and enter this secret key:</p>
+
+        <div id="qrcode" style="margin: 20px 0; padding: 10px; background: white; width: fit-content; border: 1px solid #ccc;"></div>
+        <p>Or add account manually using this secret key:</p>
         
         <h2 id="secret-display" style="background: #eee; padding: 10px; font-family: monospace;">LOADING...</h2>
         
         <p>3. Enter the code shown in the app below:</p>
-        <input type="text" id="setup-code" placeholder="Code from app"><br><br>
+        <input type="text" id="setup-code" placeholder="Code from app" maxlength="6" pattern="\d{6}" inputmode="numeric"><br><br>
         <button onclick="enable2FA()">Activate Account</button>
     </div>
 

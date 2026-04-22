@@ -5,22 +5,27 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# --- 1. RSA KEY MANAGEMENT ---
+# --- 1. RSA KEY MANAGEMENT (WITH ENCRYPTION) ---
 
-def generate_rsa_key_pair():
-    """Generates a private and public RSA key pair."""
+def generate_rsa_key_pair(password: str):
+    """
+    Generates a private and public RSA key pair. 
+    The private key is encrypted using the user's password (AES-256).
+    """
     private_key = rsa.generate_private_key(
         public_exponent=65537,
         key_size=2048,
     )
     public_key = private_key.public_key()
     
+    # Encrypt the private key using the user's password before storing it
     pem_private = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption()
+        encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8'))
     )
     
+    # Public key remains unencrypted so others can use it to encrypt messages
     pem_public = public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -31,14 +36,17 @@ def generate_rsa_key_pair():
 # --- 2. HYBRID ENCRYPTION (AES-GCM + RSA) ---
 
 def encrypt_message(message: str, recipient_public_key_pem: str):
-    """Encrypts content using AES-GCM and the AES key with RSA."""
+    """Encrypts content using AES-GCM and wraps the AES key with RSA."""
+    # Generate a random 256-bit AES key and a 12-byte nonce
     aes_key = AESGCM.generate_key(bit_length=256)
     aesgcm = AESGCM(aes_key)
     nonce = os.urandom(12)
     
+    # Encrypt the actual message content
     data = message.encode('utf-8')
     ciphertext = aesgcm.encrypt(nonce, data, associated_data=None)
     
+    # Encrypt the AES key with the recipient's RSA public key
     public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode('utf-8'))
     encrypted_aes_key = public_key.encrypt(
         aes_key,
@@ -54,15 +62,21 @@ def encrypt_message(message: str, recipient_public_key_pem: str):
         "key": base64.b64encode(encrypted_aes_key).decode('utf-8')
     })
 
-def decrypt_message(combined_body_json: str, nonce_b64: str, private_key_pem: str):
-    """Decrypts a hybrid-encrypted message using RSA and AES-GCM."""
+def decrypt_message(combined_body_json: str, nonce_b64: str, private_key_pem: str, password: str):
+    """Decrypts a hybrid-encrypted message. Password is required to unlock the private key."""
     try:
         body = json.loads(combined_body_json)
         ciphertext = base64.b64decode(body["content"])
         encrypted_aes_key = base64.b64decode(body["key"])
         nonce = base64.b64decode(nonce_b64)
 
-        private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
+        # Load the private key using the user's password provided during session
+        private_key = serialization.load_pem_private_key(
+            private_key_pem.encode('utf-8'), 
+            password=password.encode('utf-8')
+        )
+        
+        # Decrypt the AES key
         aes_key = private_key.decrypt(
             encrypted_aes_key,
             padding.OAEP(
@@ -80,9 +94,14 @@ def decrypt_message(combined_body_json: str, nonce_b64: str, private_key_pem: st
 
 # --- 3. RSA DIGITAL SIGNATURES ---
 
-def sign_data(data: str, private_key_pem: str) -> str:
-    """Signs data using the Sender's RSA Private Key."""
-    private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
+def sign_data(data: str, private_key_pem: str, password: str) -> str:
+    """Signs data using the Sender's RSA Private Key. Password is required to unlock the key."""
+    # Unlock the private key first
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode('utf-8'), 
+        password=password.encode('utf-8')
+    )
+    
     signature = private_key.sign(
         data.encode('utf-8'),
         padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
@@ -91,7 +110,7 @@ def sign_data(data: str, private_key_pem: str) -> str:
     return base64.b64encode(signature).decode('utf-8')
 
 def verify_signature(data: str, signature_b64: str, public_key_pem: str) -> bool:
-    """Verifies RSA-PSS signature."""
+    """Verifies RSA-PSS signature using a public key (no password needed)."""
     try:
         public_key = serialization.load_pem_public_key(public_key_pem.encode('utf-8'))
         public_key.verify(
