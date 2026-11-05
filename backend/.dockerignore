@@ -1,0 +1,5 @@
+tests/
+data/
+__pycache__/
+*.pyc
+requirements-dev.txt

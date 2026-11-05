@@ -1,27 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>AlfaMail</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>AlfaMail - Sign in</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
-<body style="font-family: sans-serif; padding: 2rem;">
+<body>
+<main class="narrow">
+  <div class="card">
+    <h1>AlfaMail</h1>
 
-    <h1>AlfaMail Login</h1>
-    
-    <div id="login-form">
-        <input type="text" id="username" placeholder="Username"><br><br>
-        <input type="password" id="password" placeholder="Password"><br><br>
-        <button onclick="login()">Next</button>
-        <p>No account? <a href="register.html">Register here</a></p>
-    </div>
+    <form id="login-form" autocomplete="on">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" maxlength="32" required>
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" maxlength="256" required>
+      <button type="submit" class="primary" id="login-btn">Next</button>
+      <p class="muted">No account? <a href="register.html">Register here</a></p>
+    </form>
 
-    <div id="2fa-form" style="display:none; border: 2px solid orange; padding: 20px;">
-        <h3>2FA Required</h3>
-        <p>Open your Authenticator App and enter code:</p>
-        <input type="text" id="2fa-code" maxlength="6" pattern="\d{6}" inputmode="numeric"  placeholder="6-digit code"><br><br>
-        <button onclick="verifyLogin2FA()">Verify & Login</button>
-    </div>
+    <form id="twofa-form" hidden>
+      <h2>Two-factor authentication</h2>
+      <p class="muted">Enter the 6-digit code from your authenticator app.</p>
+      <label for="twofa-code">Code</label>
+      <input type="text" id="twofa-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+      <button type="submit" class="primary" id="twofa-btn">Verify and sign in</button>
+    </form>
 
-    <script src="app.js"></script>
+    <p id="status" class="status" role="status" hidden></p>
+    <p id="error" class="error" role="alert" hidden></p>
+  </div>
+</main>
+<script type="module" src="js/login.js"></script>
 </body>
 </html>

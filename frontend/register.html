@@ -1,36 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>AlfaMail - Register</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>AlfaMail - Create account</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
-<body style="font-family: sans-serif; padding: 2rem;">
+<body>
+<main class="narrow">
+  <div class="card">
+    <h1>Create account</h1>
 
-    <h1>Create Account</h1>
+    <form id="register-form" autocomplete="on">
+      <label for="reg-username">Username</label>
+      <input type="text" id="reg-username" name="username" autocomplete="username" maxlength="32" required>
+      <p class="muted">3-32 characters: lowercase letters, digits, <code>_ . -</code></p>
 
-    <div id="registration-step">
-        <input type="text" id="reg-username" placeholder="Choose Username"><br><br>
-        <input type="password" id="reg-password" placeholder="Strong Password"><br><br>
-        <button onclick="register()">Create & Setup 2FA</button>
-        <p>Already have an account? <a href="index.html">Login</a></p>
-    </div>
+      <label for="reg-password">Password</label>
+      <input type="password" id="reg-password" name="password" autocomplete="new-password" maxlength="256" required>
+      <div id="meter" class="meter s0" aria-hidden="true"><span></span></div>
+      <p id="strength-label" class="muted" role="status">Enter a password</p>
+      <ul id="issues" class="issues"></ul>
 
-    <div id="2fa-setup-step" style="display:none; border: 2px solid blue; padding: 20px;">
-        <h3>Setup Authenticator</h3>
-        <p>1. Open Google/Microsoft Authenticator.</p>
-        <p>2. Add account manually and enter this secret key:</p>
+      <label for="reg-password2">Repeat password</label>
+      <input type="password" id="reg-password2" autocomplete="new-password" maxlength="256" required>
 
-        <div id="qrcode" style="margin: 20px 0; padding: 10px; background: white; width: fit-content; border: 1px solid #ccc;"></div>
-        <p>Or add account manually using this secret key:</p>
-        
-        <h2 id="secret-display" style="background: #eee; padding: 10px; font-family: monospace;">LOADING...</h2>
-        
-        <p>3. Enter the code shown in the app below:</p>
-        <input type="text" id="setup-code" placeholder="Code from app" maxlength="6" pattern="\d{6}" inputmode="numeric"><br><br>
-        <button onclick="enable2FA()">Activate Account</button>
-    </div>
+      <p class="muted">Your password never leaves this browser. It is used to derive your encryption keys, so
+        <strong>if you forget it your messages cannot be recovered</strong>.</p>
+      <button type="submit" class="primary" id="register-btn">Create account</button>
+      <p class="muted">Already have an account? <a href="index.html">Sign in</a></p>
+    </form>
 
-    <script src="app.js"></script>
+    <form id="setup-form" hidden>
+      <h2>Set up your authenticator</h2>
+      <p>Scan this QR code with an authenticator app (Google Authenticator, Aegis, ...):</p>
+      <div id="qrcode"></div>
+      <p class="muted">Or enter this key manually:</p>
+      <code id="secret" class="secret"></code>
+      <label for="setup-code">Enter the 6-digit code shown by the app</label>
+      <input type="text" id="setup-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+      <button type="submit" class="primary" id="setup-btn">Activate account</button>
+    </form>
+
+    <p id="status" class="status" role="status" hidden></p>
+    <p id="error" class="error" role="alert" hidden></p>
+  </div>
+</main>
+<script src="vendor/qrcode.min.js"></script>
+<script type="module" src="js/register.js"></script>
 </body>
 </html>

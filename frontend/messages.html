@@ -1,49 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>AlfaMail - Secure Inbox</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>AlfaMail - Inbox</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
-<body style="font-family: sans-serif; padding: 2rem;">
+<body>
+<main>
+  <div class="row">
+    <h1>Secure inbox</h1>
+    <div><strong id="whoami"></strong> <button type="button" id="logout-btn">Log out</button></div>
+  </div>
 
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h1>Secure Inbox</h1>
-        <div style="text-align: right;">
-            <span id="welcome-message" style="font-weight: bold; margin-right: 15px; color: #333;"></span>
-            <button onclick="logout()" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;">Logout</button>
-        </div>
+  <section class="card" aria-labelledby="compose-h">
+    <h2 id="compose-h">New message</h2>
+    <form id="compose-form">
+      <label for="recipients">To (usernames, separated by commas or spaces; max 10)</label>
+      <input type="text" id="recipients" autocomplete="off" required>
+      <label for="body">Message</label>
+      <textarea id="body" rows="5" maxlength="20000" required></textarea>
+      <label for="files">Attachments (max 5 files, 2 MB each, 3 MB total)</label>
+      <input type="file" id="files" multiple>
+      <button type="submit" class="primary" id="send-btn">Encrypt and send</button>
+      <span id="send-status" class="status" role="status"></span>
+    </form>
+  </section>
+
+  <section aria-labelledby="inbox-h">
+    <div class="row">
+      <h2 id="inbox-h">My messages</h2>
+      <button type="button" id="refresh-btn">Refresh</button>
     </div>
-    <hr>
+    <p id="inbox-status" class="status" role="status"></p>
+    <div id="inbox"></div>
+  </section>
 
-    <div style="background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-        <h3>Compose New Secure Message</h3>
-        <input type="text" id="recipient" placeholder="Recipient Username" style="width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;"><br>
-        <textarea id="msg-content" rows="4" placeholder="Type your secret message here..." style="width: 100%; padding: 8px; box-sizing: border-box;"></textarea><br>
-        <label style="display:block; margin: 10px 0 5px; font-weight:bold;">Attachment:</label>
-        <input type="file" id="attachment" style="margin-bottom: 15px;">
-        <button onclick="sendMessage()" style="background: green; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Encrypt & Send</button>
-    </div>
-
-    <div>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h3>My Messages</h3>
-            <button onclick="loadMessages()">Refresh Inbox</button>
-        </div>
-        <div id="inbox" style="margin-top: 10px;">
-            
-        </div>
-    </div>
-
-    <script src="app.js"></script>
-    <script>
-        checkAuth(); 
-        const { username } = getSession();
-        
-        if (username) {
-            document.getElementById('welcome-message').innerText = `${username}`;
-        } 
-
-        loadMessages();
-    </script>
+  <section class="card" aria-labelledby="activity-h">
+    <h2 id="activity-h">Recent account activity</h2>
+    <p class="muted">Sign-ins and failed attempts on your account. If you see an IP address you do not recognise, someone else may know your password.</p>
+    <table class="activity"><tbody id="activity"></tbody></table>
+  </section>
+</main>
+<script type="module" src="js/inbox.js"></script>
 </body>
 </html>

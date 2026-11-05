@@ -1,11 +1,15 @@
+# Local database and secrets
 backend/data/*.db
-
 .env
 
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
+# OS
 .DS_Store
 
-wdk
-kon
+# TLS material (generate with scripts/generate-certs.sh)
+nginx.crt
+nginx.key
